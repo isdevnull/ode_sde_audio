@@ -67,11 +67,15 @@ class AudioDiffusionTrainer:
     def val_epoch(self) -> dict:
         self.model.eval()
         aggregated_loss = []
-        for _, (x, y) in tqdm(enumerate(self.val_loader)):
+        for i, (x, y) in tqdm(enumerate(self.val_loader)):
             x, y = x.to(self.device), y.to(self.device)
             with torch.no_grad():
                 loss = self.diffusion(self.model, x0=x, x1=y)
                 aggregated_loss.append(loss.item())
+            
+            # hardcoded for now, lack of time
+            if i == 800:
+                break
             
         return {"val/mse_loss_per_epoch": sum(aggregated_loss) / len(aggregated_loss)}
 
