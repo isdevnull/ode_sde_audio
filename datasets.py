@@ -16,6 +16,9 @@ from scipy.signal import sosfiltfilt
 from scipy.signal import cheby1
 from scipy.signal import resample_poly
 
+from dataset_utils import mel_spectrogram
+from functools import partial
+
 
 def split_audios(audios, segment_size, split):
     audios = [torch.FloatTensor(audio).unsqueeze(0) for audio in audios]
@@ -184,13 +187,16 @@ def collate_fn_vctk_bwe(batch):
         wav_list = list()
         wav_l_list = list()
         #band_list = list()
-        for wav_l, wav in batch:
+        spec_list = list()
+        for wav_l, wav, spec in batch:
             wav_list.append(wav)
             wav_l_list.append(wav_l)
+            spec_list.append(spec)
         wav_list = torch.stack(wav_list, dim=0).unsqueeze(1)
         wav_l_list = torch.stack(wav_l_list, dim=0).unsqueeze(1)
+        spec_list = torch.stack(spec_list, dim=0)
 
-        return wav_l_list, wav_list
+        return wav_l_list, wav_list, spec_list
 
 
 # def create_vctk_dataloader(hparams, cv, sr=24000):
@@ -257,6 +263,12 @@ class VCTKMultiSpkDataset(Dataset):
 
         assert len(self.data_list) != 0, "no data found"
 
+        self.mel_spec_transform = partial(mel_spectrogram,
+            n_fft=1024, num_mels=80, sampling_rate=self.hparams.audio.sampling_rate,
+            hop_size=256, win_size=1024, fmin=0,
+            fmax=(self.hparams.audio.sampling_rate // 2)
+        )
+
     def __len__(self):
         return len(self.data_list)
 
@@ -308,4 +320,4 @@ class VCTKMultiSpkDataset(Dataset):
         # fft_size = self.hparams.audio.filter_length // 2 + 1
         # band = torch.zeros(fft_size, dtype = torch.int64)
         # band[:int(hi * fft_size)] = 1
-        return torch.from_numpy(wav_l.copy()).float(), torch.from_numpy(wav).float(), 
+        return torch.from_numpy(wav_l.copy()).float(), torch.from_numpy(wav).float(), torch.from_numpy(self.mel_spec_transform(wav_l.copy()))

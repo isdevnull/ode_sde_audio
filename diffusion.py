@@ -60,7 +60,7 @@ class Diffusion:
         x_t = mu + cov * torch.randn_like(x0)
         return x_t, sigma2
 
-    def generate(self, net, x0, n_steps: int = 100):
+    def generate(self, net, x0, n_steps: int = 100, mel=None):
         t = torch.linspace(0., 1., steps=n_steps + 1).to(x0.device)
         
         class SDEWrapper(torch.nn.Module):
@@ -77,7 +77,7 @@ class Diffusion:
             
             def f(self, t, y):
                 with torch.no_grad():
-                    return self.model(y.unsqueeze(1), t).squeeze()
+                    return self.model(y.unsqueeze(1), t, mel).squeeze()
 
             def g(self, t, y):
                 return torch.sqrt(self.beta_f(t.view(1, 1, 1).expand(y.size(0), y.size(-1), 1)))
@@ -85,7 +85,7 @@ class Diffusion:
         sde_model = SDEWrapper(net, self.beta_func)
         return sdeint(sde_model, x0.squeeze(), t, dt=1e-2, dt_min=1e-3)[-1]
 
-    def __call__(self, net, x0, x1):
+    def __call__(self, net, x0, x1, mel=None):
         """
             loss function
         """
@@ -95,7 +95,10 @@ class Diffusion:
             t = t[:, None]
         beta_schedule = self.beta_func(t)
         x_t, sigma2 = self.get_interpolant(t, x0, x1)
-        pred_vf = net(x_t, t.view(-1))
+        if mel is not None:
+            pred_vf = net(x_t, t.view(-1), mel)
+        else:
+            pred_vf = net(x_t, t.view(-1))
         true_vf = beta_schedule / sigma2 * (x1 - x_t)
 
         return torch.nn.functional.mse_loss(pred_vf, true_vf)

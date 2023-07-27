@@ -46,9 +46,9 @@ class AudioDiffusionTrainer:
         aggregated_loss = []
         self.model.train()
         for i in tqdm(range(1, self.cfg.n_iters_per_epoch * self.cfg.accumulate_every + 1)):
-            x, y = next(self.train_loader)
-            x, y = x.to(self.device), y.to(self.device)
-            loss = self.diffusion(self.model, x0=x, x1=y)
+            x, y, mel = next(self.train_loader)
+            x, y, mel = x.to(self.device), y.to(self.device), mel.to(self.device)
+            loss = self.diffusion(self.model, x0=x, x1=y, mel=mel)
             loss.backward()
             loss_acc += loss.detach().cpu().item() / (self.cfg.log_every_iter * self.cfg.accumulate_every)
             if i % self.cfg.accumulate_every == 0:
@@ -67,10 +67,10 @@ class AudioDiffusionTrainer:
     def val_epoch(self) -> dict:
         self.model.eval()
         aggregated_loss = []
-        for i, (x, y) in tqdm(enumerate(self.val_loader)):
-            x, y = x.to(self.device), y.to(self.device)
+        for i, (x, y, mel) in tqdm(enumerate(self.val_loader)):
+            x, y, mel = x.to(self.device), y.to(self.device), mel.to(self.device)
             with torch.no_grad():
-                loss = self.diffusion(self.model, x0=x, x1=y)
+                loss = self.diffusion(self.model, x0=x, x1=y, mel=mel)
                 aggregated_loss.append(loss.item())
             
             # hardcoded for now, lack of time
@@ -98,9 +98,9 @@ class AudioDiffusionTrainer:
             # visualize samples
             if epoch % self.cfg.visualize_every_epoch == 0:
                 self.model.eval()
-                for _, (x, y) in enumerate(self.val_loader):
+                for _, (x, y, mel) in enumerate(self.val_loader):
                     with torch.no_grad():
-                        y_pred = self.diffusion.generate(self.model, x.to(self.device), n_steps=100)
+                        y_pred = self.diffusion.generate(self.model, x.to(self.device), n_steps=100, mel=mel.to(self.device))
 
                     log_data = {}
                     for idx in range(y_pred.shape[0]):
