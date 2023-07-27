@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional
+import torchaudio
 
 from torchsde import sdeint
 
@@ -31,10 +32,18 @@ def get_beta_function(type: str = "triangle", *args, **kwargs) -> Callable:
 
 
 class Diffusion:
-    def __init__(self, beta_type: str, beta_min: float = 1e-9, beta_max: float = 1.3e-4):
+    def __init__(self, beta_type: str, beta_min: float = 1e-9, beta_max: float = 1.3e-4, use_mel: bool = False):
         self.beta_type = beta_type
         self.beta_min, self.beta_max = beta_min, beta_max
         self.beta_func = get_beta_function(beta_type, a=beta_min, b=beta_max, epsilon=beta_max)
+        
+        self.transform = None
+        if use_mel:
+            # hardcoded at this moment
+            self.transform = torchaudio.transforms.MelSpectrogram(
+                sample_rate=48000, n_fft=1024, win_length=1024, hop_length=256,
+                f_min=0, f_max=24000, n_mels=80, center=False
+            ).to("cuda")
 
     def get_variance(self, t: torch.Tensor):
         sigma1 = torch.empty_like(t, device=t.device) # [0, t]
@@ -59,9 +68,15 @@ class Diffusion:
 
         x_t = mu + cov * torch.randn_like(x0)
         return x_t, sigma2
+    
+    def get_mel(self, x_t):
+        x_to_mel = torch.nn.functional.pad(x_t, (int((1024 - 256) / 2), int((1024 - 256) / 2)), mode="reflect")
+        mel = self.transform(x_to_mel.squeeze())
+        return mel
 
     def generate(self, net, x0, n_steps: int = 100):
         t = torch.linspace(0., 1., steps=n_steps + 1).to(x0.device)
+        mel_f = lambda x: self.get_mel(x) if self.transform is not None else None
         
         class SDEWrapper(torch.nn.Module):
             """
@@ -77,7 +92,12 @@ class Diffusion:
             
             def f(self, t, y):
                 with torch.no_grad():
-                    return self.model(y.unsqueeze(1), t).squeeze()
+                    if mel_f is not None:
+                        mel = mel_f(y)
+                        out = self.model(y.unsqueeze(1), t, mel).squeeze()
+                    else:
+                        out = self.model(y.unsqueeze(1), t).squeeze()
+                    return out
 
             def g(self, t, y):
                 return torch.sqrt(self.beta_f(t.view(1, 1, 1).expand(y.size(0), y.size(-1), 1)))
@@ -95,7 +115,11 @@ class Diffusion:
             t = t[:, None]
         beta_schedule = self.beta_func(t)
         x_t, sigma2 = self.get_interpolant(t, x0, x1)
-        pred_vf = net(x_t, t.view(-1))
+        if self.transform is not None:
+            mel = self.get_mel(x_t)
+            pred_vf = net(x_t, t.view(-1), mel)
+        else:
+            pred_vf = net(x_t, t.view(-1))
         true_vf = beta_schedule / sigma2 * (x1 - x_t)
 
         return torch.nn.functional.mse_loss(pred_vf, true_vf)

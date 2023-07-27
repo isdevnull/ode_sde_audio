@@ -16,7 +16,7 @@ from tqdm import tqdm
 class AudioDiffusionTrainer:
     def __init__(self, cfg):
         self.cfg = cfg
-        self.diffusion = Diffusion(beta_type="triangle")
+        self.diffusion = Diffusion(beta_type="triangle", use_mel=True)
 
     @property
     def device(self):

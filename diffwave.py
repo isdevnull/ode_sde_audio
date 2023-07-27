@@ -198,17 +198,30 @@ class DiffWave(nn.Module):
 
 if __name__ == "__main__":
     from omegaconf import OmegaConf
+    from dataset_utils import mel_spectrogram
+    import torchaudio.transforms as T
 
     params = OmegaConf.create(
         dict(
             residual_channels=512,
             residual_layers=27,
             n_mels=80,
-            unconditional=True,
+            unconditional=False,
             dilation_cycle_length=12,
         )
     )
-    model = DiffWave(params).to("cuda:0")
+    model = DiffWave(params) #.to("cuda:0")
     print(sum(p.numel() for p in model.parameters()))
-    y = model(torch.randn(2, 32768).to("cuda:0"), torch.rand(2).to("cuda:0"))
+    
+    mel1 = mel_spectrogram(torch.randn(1, 32768).view(-1).numpy(), n_fft=1024, num_mels=80, sampling_rate=16000, hop_size=256, win_size=1024, fmin=0, fmax=8000)
+    print(mel1.shape)
+    x = torch.randn(2, 1, 32768)
+    
+    x_to_mel = torch.nn.functional.pad(x, (int((1024 - 256) / 2), int((1024 - 256) / 2)), mode="reflect")
+    print(x.shape)
+
+    transform = T.MelSpectrogram(16000, n_fft=1024, win_length=1024, hop_length=256, f_min=0, f_max=8000, n_mels=80, center=False)
+    mel = transform(x_to_mel.squeeze())
+    print(mel.shape)
+    y = model(x, torch.rand(2), mel)
     print(y.shape)
