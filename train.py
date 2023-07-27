@@ -12,15 +12,19 @@ from dataset_utils import draw_spec
 import wandb
 from tqdm import tqdm
 
+from accelerate import Accelerator
+from accelerate.utils import ProjectConfiguration
+
 
 class AudioDiffusionTrainer:
-    def __init__(self, cfg):
+    def __init__(self, cfg, accelerator: Accelerator):
         self.cfg = cfg
         self.diffusion = Diffusion(beta_type="triangle")
+        self.accelerator = accelerator
 
     @property
     def device(self):
-        return self.cfg.device
+        return self.accelerator.device
 
     def setup_datasets(self):
         self.train_dataset = hydra.utils.instantiate(self.cfg.dataset.train_dataset)
@@ -46,19 +50,20 @@ class AudioDiffusionTrainer:
         aggregated_loss = []
         self.model.train()
         for i in tqdm(range(1, self.cfg.n_iters_per_epoch * self.cfg.accumulate_every + 1)):
-            x, y = next(self.train_loader)
-            x, y = x.to(self.device), y.to(self.device)
-            loss = self.diffusion(self.model, x0=x, x1=y)
-            loss.backward()
-            loss_acc += loss.detach().cpu().item() / (self.cfg.log_every_iter * self.cfg.accumulate_every)
-            if i % self.cfg.accumulate_every == 0:
+            with self.accelerator.accumulate(self.model):
+                x, y = next(self.train_loader)
+                #x, y = x.to(self.device), y.to(self.device)
+                loss = self.diffusion(self.model, x0=x, x1=y)
+                self.accelerator.backward(loss)
+                loss_acc += loss.detach().cpu().item() / (self.cfg.log_every_iter * self.cfg.accumulate_every)
+
                 self.optimizer.step()
                 self.optimizer.zero_grad()
 
                 if self.cfg.log_every_iter > self.cfg.n_iters_per_epoch:
                     self.cfg.log_every_iter = self.cfg.n_iters_per_epoch
                 if i % (self.cfg.log_every_iter * self.cfg.accumulate_every) == 0:
-                    wandb.log({"train/mse_loss_per_acc": loss_acc})
+                    self.accelerator.log({"train/mse_loss_per_acc": loss_acc})
                     aggregated_loss.append(loss_acc)
                     loss_acc = 0.0
 
@@ -85,6 +90,10 @@ class AudioDiffusionTrainer:
         self.setup_model()
         self.setup_optimizer()
 
+        self.accelerator.prepare(self.model, self.optimizer, self.train_loader, self.val_loader)
+        if self.cfg.full_state_ckpt is not None:
+            self.accelerator.load_state(self.cfg.full_state_ckpt)
+
         for epoch in range(1, self.cfg.n_epochs + 1):
             aggregated_info = {"epoch": epoch}
             train_epoch_info = self.train_epoch()
@@ -93,7 +102,7 @@ class AudioDiffusionTrainer:
             aggregated_info.update(val_epoch_info)
             
             # log train/val epoch losses
-            wandb.log(aggregated_info)
+            self.accelerator.log(aggregated_info)
             
             # visualize samples
             if epoch % self.cfg.visualize_every_epoch == 0:
@@ -118,25 +127,71 @@ class AudioDiffusionTrainer:
                             f"test_sample_{idx}/specs": wandb.Image(spec_fig, caption=f"{epoch=}"),
                         })
 
-                        
-                    wandb.log(log_data)
+                    wandb_tracker = self.accelerator.get_tracker("wandb", unwrap=True)
+                    with self.accelerator.on_main_process:
+                        wandb_tracker.log(log_data)
+                 
                     break
 
             # save model checkpoint
-            if epoch % self.cfg.save_every_epoch == 0:
-                save_dir = os.path.join(self.cfg.checkpoint_dir, self.cfg.experiment_name)
+            if epoch % self.cfg.save_model_every_epoch == 0:
+
+                self.accelerator.wait_for_everyone()
+                save_dir = os.path.join(self.accelerator.project_configuration.project_dir, "model_ckpt")
                 if not os.path.exists(save_dir):
                     os.makedirs(save_dir)
-                torch.save(self.model.state_dict(), os.path.join(save_dir, f"ckpt_{epoch=}.pth"))
+                self.accelerator.save(self.accelerator.unwrap_model(self.model).state_dict(), os.path.join(save_dir, f"ckpt_{epoch=}.pth"))
+            
+            # save full state
+            if epoch % self.cfg.save_full_state_every == 0:
+                full_state_path = os.path.join(self.accelerator.project_configuration.project_dir, "full_state_ckpt")
+                if not os.path.exists(full_state_path):
+                    os.makedirs(full_state_path)
+                self.accelerator.save_state(full_state_path)
 
 
 @hydra.main("configs", "main_config", version_base=None)
 def main(cfg):
-    setup_seed(cfg.seed, False)
     
-    wandb.init(project="audio_flows", name=cfg.experiment_name)
-    trainer = AudioDiffusionTrainer(cfg)
+    # setup project paths
+    project_cfg = ProjectConfiguration(
+        project_dir=f"experiments/{cfg.experiment_name}",
+        automatic_checkpoint_naming=True,
+        total_limit=1,
+    )
+
+    # initialize accelerator
+    accelerator = Accelerator(
+        project_config=project_cfg,
+        log_with="wandb",
+        gradient_accumulation_steps=cfg.accumulate_every
+    )
+
+    # just test what it gives
+    cfg_log = dict(
+        n_epochs=cfg.n_epochs,
+        n_iters_per_epoch=cfg.n_iters_per_epoc,
+        train_batch_size=cfg.train_batch_size,
+        val_batch_size=cfg.val_batch_size,
+        accumulate_every=cfg.accumulate_every,
+        save_every_epoch=cfg.save_every_epoch,
+        log_every_iter=cfg.log_every_iter,
+        compute_metric_every_epoch=cfg.compute_metric_every_epoch, # not working now
+        visualize_every_epoch=cfg.visualize_every_epoch,
+        lr=2e-4
+    )
+    
+    # initalize specified experiment trackers
+    accelerator.init_trackers(project_name="audio_flows", config=cfg_log)
+
+    # intialize trainer and pass accelerator to it
+    trainer = AudioDiffusionTrainer(cfg, accelerator)
+    
+    # train
     trainer.train()
+
+    # end training
+    accelerator.end_training()
 
 
 def setup_seed(seed, cudnn_benchmark_off):

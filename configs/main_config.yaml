@@ -14,10 +14,14 @@ n_iters_per_epoch: 1000
 train_batch_size: 2
 val_batch_size: 2
 accumulate_every: 64
-save_every_epoch: 10
+save_model_every_epoch: 10
+save_full_state_every: 1
 log_every_iter: 100
 compute_metric_every_epoch: 1 # not working now
 visualize_every_epoch: 1
 lr: 2e-4
 
 device: cuda
+
+full_state_ckpt: null
+model_ckpt: null
