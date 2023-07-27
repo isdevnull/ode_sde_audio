@@ -27,4 +27,4 @@ val_dataset:
   cv: 1
 
 
-sampling_rate: ${hparams_args.audio.sampling_rate}
+sampling_rate: ${.hparams_args.audio.sampling_rate}

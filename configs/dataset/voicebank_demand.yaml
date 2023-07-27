@@ -22,4 +22,4 @@ val_dataset:
   device: cuda
 
 
-sampling_rate: ${train_dataset.sampling_rate}
+sampling_rate: ${.train_dataset.sampling_rate}
