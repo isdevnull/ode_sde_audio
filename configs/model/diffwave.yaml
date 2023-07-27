@@ -1,0 +1,8 @@
+model:
+  _target_: diffwave.DiffWave
+  params:
+    residual_channels: 512
+    residual_layers: 27
+    n_mels: 80
+    unconditional: True
+    dilation_cycle_length: 12

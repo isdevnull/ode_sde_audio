@@ -1,0 +1,23 @@
+defaults:
+  - dataset: voicebank_demand
+  - dataloader: basic_dataloader
+  - model: diffwave
+  - _self_
+
+
+experiment_name: ???
+seed: 41113
+checkpoint_dir: checkpoints
+
+n_epochs: 1000
+n_iters_per_epoch: 1000
+train_batch_size: 2
+val_batch_size: 2
+accumulate_every: 64
+save_every_epoch: 10
+log_every_iter: 100
+compute_metric_every_epoch: 1 # not working now
+visualize_every_epoch: 1
+lr: 2e-4
+
+device: cuda

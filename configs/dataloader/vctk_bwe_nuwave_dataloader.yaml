@@ -1,0 +1,18 @@
+train_dataloader:
+  _target_: torch.utils.data.DataLoader
+  batch_size: 2
+  pin_memory: True
+  num_workers: 2
+  collate_fn:
+   _target_: datasets.collate_fn_vctk_bwe
+   _partial_: True
+
+val_dataloader:
+  _target_: torch.utils.data.DataLoader
+  batch_size: 2
+  shuffle: False
+  num_workers: 2
+  shuffle: False
+  collate_fn:
+   _target_: datasets.collate_fn_vctk_bwe
+   _partial_: True

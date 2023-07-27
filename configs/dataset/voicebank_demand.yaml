@@ -1,0 +1,25 @@
+root_dir: /mnt/hdd/voicebank-demand
+
+train_dataset:
+  _target_: datasets.Voicebank1ChannelDataset
+  noisy_wavs_dir: ${..root_dir}/noisy_trainset_28spk_wav
+  clean_wavs_dir: ${..root_dir}/clean_trainset_28spk_wav 
+  segment_size: 32768
+  sampling_rate: 16000
+  split: True
+  shuffle: True
+  device: cuda
+
+
+val_dataset:
+  _target_: datasets.Voicebank1ChannelDataset
+  noisy_wavs_dir: ${..root_dir}/noisy_testset_wav 
+  clean_wavs_dir: ${..root_dir}/clean_testset_wav
+  segment_size: 32768
+  sampling_rate: 16000
+  split: True
+  shuffle: False
+  device: cuda
+
+
+sampling_rate: ${train_dataset.sampling_rate}

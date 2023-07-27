@@ -1,0 +1,30 @@
+hparams_args:
+  audio:
+    filter_length: 1024
+    hop_length: 256
+    win_length: 1024
+    sampling_rate: 48000
+    sr_min: 6000
+    sr_max: 48000
+    length: 32768 #32*1024 ~ 1sec
+  data:
+    timestamp_path: './vctk-silences.0.92.txt'
+    base_dir: '/mnt/hdd/VCTK-Corpus-0.92-bwe-nuwave/wav48_silence_trimmed/'
+    dir: '/mnt/hdd/VCTK-Corpus-0.92-bwe-nuwave/wav48_silence_trimmed_wav/'
+    format: '*mic1.wav'
+    cv_ratio: (100./108., 8./108., 0.00) #train/val/test
+
+
+train_dataset:
+  _target_: datasets.VCTKMultiSpkDataset
+  hparams: ${..hparams_args}
+  cv: 0
+
+
+val_dataset:
+  _target_: datasets.VCTKMultiSpkDataset
+  hparams: ${..hparams_args}
+  cv: 1
+
+
+sampling_rate: ${hparams_args.sampling_rate}
