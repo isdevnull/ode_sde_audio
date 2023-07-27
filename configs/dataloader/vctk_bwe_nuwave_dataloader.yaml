@@ -12,7 +12,6 @@ val_dataloader:
   batch_size: 2
   shuffle: False
   num_workers: 2
-  shuffle: False
   collate_fn:
    _target_: datasets.collate_fn_vctk_bwe
    _partial_: True

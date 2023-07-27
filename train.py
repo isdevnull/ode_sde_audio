@@ -28,8 +28,8 @@ class AudioDiffusionTrainer:
 
     def setup_loaders(self):
         sampler = InfiniteSampler(self.train_dataset, shuffle=True)
-        self.train_loader = iter(hydra.utils.instantiate(self.cfg.dataloader.train_dataloader, sampler=sampler))
-        self.val_loader = hydra.utils.instantiate(self.cfg.dataloader.val_dataloader)
+        self.train_loader = iter(hydra.utils.instantiate(self.cfg.dataloader.train_dataloader, self.train_dataset, sampler=sampler))
+        self.val_loader = hydra.utils.instantiate(self.cfg.dataloader.val_dataloade, self.val_dataset)
 
     def setup_model(self, load_from_checkpoint: bool = False):
         model = hydra.utils.instantiate(self.cfg.model.model)

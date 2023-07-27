@@ -183,16 +183,14 @@ class Voicebank1ChannelDataset(VoicebankDataset):
 def collate_fn_vctk_bwe(batch):
         wav_list = list()
         wav_l_list = list()
-        band_list = list()
-        for wav, wav_l, band in batch:
+        #band_list = list()
+        for wav, wav_l in batch:
             wav_list.append(wav)
             wav_l_list.append(wav_l)
-            band_list.append(band)
         wav_list = torch.stack(wav_list, dim=0).squeeze(1)
         wav_l_list = torch.stack(wav_l_list, dim=0).squeeze(1)
-        band_list = torch.stack(band_list, dim=0)
 
-        return wav_list, wav_l_list, band_list
+        return wav_list, wav_l_list
 
 
 # def create_vctk_dataloader(hparams, cv, sr=24000):
