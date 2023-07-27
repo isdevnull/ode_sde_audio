@@ -185,8 +185,8 @@ def collate_fn_vctk_bwe(batch):
         wav_l_list = list()
         #band_list = list()
         for wav, wav_l in batch:
-            wav_list.append(wav)
-            wav_l_list.append(wav_l)
+            wav_list.append(wav.unsqueeze(1))
+            wav_l_list.append(wav_l.unsqueeze(1))
         wav_list = torch.stack(wav_list, dim=0).squeeze(1)
         wav_l_list = torch.stack(wav_l_list, dim=0).squeeze(1)
 
