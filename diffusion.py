@@ -77,13 +77,14 @@ class Diffusion:
             
             def f(self, t, y):
                 with torch.no_grad():
-                    return self.model(y.unsqueeze(1), t).squeeze()
+                    return self.model(y.unsqueeze(1), t).squeeze(1)
 
             def g(self, t, y):
-                return torch.sqrt(self.beta_f(t.view(1, 1, 1).expand(y.size(0), y.size(-1), 1)))
+                out = torch.sqrt(self.beta_f(t.view(1, 1, 1).expand(y.size(0), y.size(-1), 1)))
+                return out
 
         sde_model = SDEWrapper(net, self.beta_func)
-        return sdeint(sde_model, x0.squeeze(), t, dt=1e-2, dt_min=1e-3)[-1]
+        return sdeint(sde_model, x0.squeeze(1), t, dt=1e-2, dt_min=1e-3)[-1]
 
     def __call__(self, net, x0, x1):
         """

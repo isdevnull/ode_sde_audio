@@ -2,3 +2,7 @@ __pycache__
 checkpoints
 outputs
 wandb
+experiments
+logs
+weights
+notebooks

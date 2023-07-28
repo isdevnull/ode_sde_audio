@@ -21,3 +21,5 @@ visualize_every_epoch: 1
 lr: 2e-4
 
 device: cuda
+
+checkpoint_path: None
