@@ -31,7 +31,10 @@ class AudioDiffusionTrainer:
         self.val_dataset = hydra.utils.instantiate(self.cfg.dataset.val_dataset)
 
     def setup_loaders(self):
-        sampler = InfiniteSampler(self.train_dataset, shuffle=True)
+        sampler = InfiniteSampler(
+            self.train_dataset, rank=self.accelerator.process_index,
+            num_replicas=self.accelerator.num_processes, shuffle=True
+        )
         self.train_loader = iter(hydra.utils.instantiate(self.cfg.dataloader.train_dataloader, self.train_dataset, sampler=sampler))
         self.val_loader = hydra.utils.instantiate(self.cfg.dataloader.val_dataloader, self.val_dataset)
 
@@ -40,7 +43,7 @@ class AudioDiffusionTrainer:
         if load_from_checkpoint:
             model.load_state_dict(torch.load(self.cfg.checkpoint_path, map_location="cpu"))
 
-        self.model = model.to(self.device)
+        self.model = model
 
     def setup_optimizer(self):
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.cfg.lr)
@@ -52,7 +55,7 @@ class AudioDiffusionTrainer:
         for i in tqdm(range(1, self.cfg.n_iters_per_epoch * self.cfg.accumulate_every + 1)):
             with self.accelerator.accumulate(self.model):
                 x, y = next(self.train_loader)
-                #x, y = x.to(self.device), y.to(self.device)
+                x, y = x.to(self.device), y.to(self.device)
                 loss = self.diffusion(self.model, x0=x, x1=y)
                 self.accelerator.backward(loss)
                 loss_acc += loss.detach().cpu().item() / (self.cfg.log_every_iter * self.cfg.accumulate_every)
@@ -128,7 +131,7 @@ class AudioDiffusionTrainer:
                         })
 
                     wandb_tracker = self.accelerator.get_tracker("wandb", unwrap=True)
-                    with self.accelerator.on_main_process:
+                    if self.accelerator.is_main_process:
                         wandb_tracker.log(log_data)
                  
                     break
@@ -136,18 +139,19 @@ class AudioDiffusionTrainer:
             # save model checkpoint
             if epoch % self.cfg.save_model_every_epoch == 0:
 
-                self.accelerator.wait_for_everyone()
                 save_dir = os.path.join(self.accelerator.project_configuration.project_dir, "model_ckpt")
-                if not os.path.exists(save_dir):
-                    os.makedirs(save_dir)
-                self.accelerator.save(self.accelerator.unwrap_model(self.model).state_dict(), os.path.join(save_dir, f"ckpt_{epoch=}.pth"))
+                if self.accelerator.is_main_process:
+                    if not os.path.exists(save_dir):
+                        os.makedirs(save_dir)
+
+                self.accelerator.wait_for_everyone()
+                self.accelerator.save_model(self.model, os.path.join(save_dir, f"ckpt_{epoch=}"))
             
             # save full state
             if epoch % self.cfg.save_full_state_every == 0:
-                full_state_path = os.path.join(self.accelerator.project_configuration.project_dir, "full_state_ckpt")
-                if not os.path.exists(full_state_path):
-                    os.makedirs(full_state_path)
-                self.accelerator.save_state(full_state_path)
+
+                self.accelerator.wait_for_everyone()
+                self.accelerator.save_state()
 
 
 @hydra.main("configs", "main_config", version_base=None)
@@ -170,11 +174,11 @@ def main(cfg):
     # just test what it gives
     cfg_log = dict(
         n_epochs=cfg.n_epochs,
-        n_iters_per_epoch=cfg.n_iters_per_epoc,
+        n_iters_per_epoch=cfg.n_iters_per_epoch,
         train_batch_size=cfg.train_batch_size,
         val_batch_size=cfg.val_batch_size,
         accumulate_every=cfg.accumulate_every,
-        save_every_epoch=cfg.save_every_epoch,
+        save_every_epoch=cfg.save_model_every_epoch,
         log_every_iter=cfg.log_every_iter,
         compute_metric_every_epoch=cfg.compute_metric_every_epoch, # not working now
         visualize_every_epoch=cfg.visualize_every_epoch,
@@ -182,7 +186,10 @@ def main(cfg):
     )
     
     # initalize specified experiment trackers
-    accelerator.init_trackers(project_name="audio_flows", config=cfg_log)
+    accelerator.init_trackers(
+            project_name="audio_flows", config=cfg_log,
+            init_kwargs={"wandb": {"name": cfg.experiment_name}}
+    )
 
     # intialize trainer and pass accelerator to it
     trainer = AudioDiffusionTrainer(cfg, accelerator)

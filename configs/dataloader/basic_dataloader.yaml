@@ -7,6 +7,5 @@ train_dataloader:
 val_dataloader:
   _target_: torch.utils.data.DataLoader
   batch_size: 2
-  shuffle: False
   num_workers: 2
   shuffle: False
