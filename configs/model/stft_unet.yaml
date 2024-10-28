@@ -1,0 +1,9 @@
+model:
+  _target_: models.networks.STFTUnet
+  img_resolution: 257  # Image resolution.
+  img_channels: 2  # Number of color channels.
+  label_dim: 0  # Number of class labels, 0 = unconditional.
+  model_type: "DhariwalUNet"  # Class name of the underlying model.
+  channel_mult: [1,2,3,4]
+  model_channels: 192
+  dropout: 0.0

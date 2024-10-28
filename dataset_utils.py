@@ -7,7 +7,6 @@ import librosa
 import librosa.display
 
 
-
 def dynamic_range_compression(x, C=1, clip_val=1e-5):
     return np.log(np.clip(x, a_min=clip_val, a_max=None) * C)
 

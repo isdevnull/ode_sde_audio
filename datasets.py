@@ -16,6 +16,8 @@ from scipy.signal import sosfiltfilt
 from scipy.signal import cheby1
 from scipy.signal import resample_poly
 
+import torchaudio
+
 
 def split_audios(audios, segment_size, split):
     audios = [torch.FloatTensor(audio).unsqueeze(0) for audio in audios]
@@ -257,6 +259,7 @@ class VCTKMultiSpkDataset(Dataset):
 
         assert len(self.data_list) != 0, "no data found"
 
+
     def __len__(self):
         return len(self.data_list)
 
@@ -277,12 +280,12 @@ class VCTKMultiSpkDataset(Dataset):
         if self.cv == 0:
             order = random.randint(1, 11)
             ripple = random.choice([1e-9, 1e-6, 1e-3, 1, 5])
-            highcut = random.randint(self.hparams.audio.sr_min // 2, self.hparams.audio.sr_max // 2)
+            highcut = 4000 #random.randint(self.hparams.audio.sr_min // 2, self.hparams.audio.sr_max // 2)
         else:
             order = 8
             ripple = 0.05
             if self.cv == 1:
-                highcut = random.choice([8000 // 2, 12000 // 2, 16000 // 2, 24000 // 2])
+                highcut = 4000 #random.choice([8000 // 2, 12000 // 2, 16000 // 2, 24000 // 2])
             elif self.cv == 2:
                 highcut = self.sr // 2
 

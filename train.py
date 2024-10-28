@@ -15,11 +15,13 @@ from tqdm import tqdm
 from accelerate import Accelerator
 from accelerate.utils import ProjectConfiguration
 
+from utils import compute_grad_norm, compute_weight_norm
+
 
 class AudioDiffusionTrainer:
     def __init__(self, cfg, accelerator: Accelerator):
         self.cfg = cfg
-        self.diffusion = Diffusion(beta_type="triangle")
+        self.diffusion = Diffusion(beta_type="triangle", spectral=self.cfg.spectral)
         self.accelerator = accelerator
 
     @property
@@ -39,7 +41,7 @@ class AudioDiffusionTrainer:
         self.val_loader = hydra.utils.instantiate(self.cfg.dataloader.val_dataloader, self.val_dataset)
 
     def setup_model(self, load_from_checkpoint: bool = False):
-        model = hydra.utils.instantiate(self.cfg.model.model)
+        model = hydra.utils.instantiate(self.cfg.model.model, spectral=self.cfg.spectral)
         if load_from_checkpoint:
             model.load_state_dict(torch.load(self.cfg.checkpoint_path, map_location="cpu"))
 
@@ -66,7 +68,14 @@ class AudioDiffusionTrainer:
                 if self.cfg.log_every_iter > self.cfg.n_iters_per_epoch:
                     self.cfg.log_every_iter = self.cfg.n_iters_per_epoch
                 if i % (self.cfg.log_every_iter * self.cfg.accumulate_every) == 0:
-                    self.accelerator.log({"train/mse_loss_per_acc": loss_acc})
+                    if self.accelerator.process_index == 0:
+                        weight_norm = compute_weight_norm(self.model)
+                        grad_norm = compute_grad_norm(self.model)
+                    self.accelerator.log({
+                        "train/mse_loss_per_acc": loss_acc,
+                        "utils/grad_norm": grad_norm,
+                        "utils/weight_norm": weight_norm    
+                    })
                     aggregated_loss.append(loss_acc)
                     loss_acc = 0.0
 
