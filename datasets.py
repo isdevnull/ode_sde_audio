@@ -183,16 +183,18 @@ class Voicebank1ChannelDataset(VoicebankDataset):
 
 
 def collate_fn_vctk_bwe(batch):
-        wav_list = list()
-        wav_l_list = list()
-        #band_list = list()
-        for wav_l, wav in batch:
-            wav_list.append(wav)
-            wav_l_list.append(wav_l)
-        wav_list = torch.stack(wav_list, dim=0).unsqueeze(1)
-        wav_l_list = torch.stack(wav_l_list, dim=0).unsqueeze(1)
+    wav_list = list()
+    wav_l_list = list()
+    band_list = list()
+    for wav, wav_l, band in batch:
+        wav_list.append(wav)
+        wav_l_list.append(wav_l)
+        band_list.append(band)
+    wav_list = torch.stack(wav_list, dim=0).squeeze(1)
+    wav_l_list = torch.stack(wav_l_list, dim=0).squeeze(1)
+    band_list = torch.stack(band_list, dim=0)
 
-        return wav_l_list, wav_list
+    return wav_list, wav_l_list, band_list
 
 
 # def create_vctk_dataloader(hparams, cv, sr=24000):
@@ -308,7 +310,7 @@ class VCTKMultiSpkDataset(Dataset):
         elif len(wav_l) > len(wav):
             wav_l = wav_l[:len(wav)]
 
-        # fft_size = self.hparams.audio.filter_length // 2 + 1
-        # band = torch.zeros(fft_size, dtype = torch.int64)
-        # band[:int(hi * fft_size)] = 1
-        return torch.from_numpy(wav_l.copy()).float(), torch.from_numpy(wav).float(), 
+        fft_size = self.hparams.audio.filter_length // 2 + 1
+        band = torch.zeros(fft_size, dtype = torch.int64)
+        band[:int(hi * fft_size)] = 1
+        return torch.from_numpy(wav_l.copy()).float(), torch.from_numpy(wav).float(), band

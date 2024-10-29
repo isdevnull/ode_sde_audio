@@ -39,12 +39,14 @@ def solve_adaptive_ode(
     begin=0.0,
     end=1.0,
     ode_method="euler",
+    **net_conds
 ) -> torch.Tensor:
     
     @torch.no_grad()
     def drift(t, x):
         sigma = torch.ones(x0.shape[0], device=x.device) * t
-        return model(x, sigma)
+        out = model(x, sigma, **net_conds)
+        return out
 
     out = odeint(
         func=drift,
@@ -98,18 +100,18 @@ class Diffusion:
         #x_t *= ((torch.rand(1).to(x0.device) / 2) + 0.5)
         return x_t, None
     
-    def generate(self, net, x0, n_steps: int = 100):
+    def generate(self, net, x0, n_steps: int = 100, **net_conds):
         if self.spectral:
             x0 = torch.stft(x0.squeeze(1), n_fft=512, win_length=512, hop_length=128, window=self.window.to(x0.device), center=True, normalized=True, return_complex=True)
             x0 = torch.view_as_real(x0).permute(0, 3, 1, 2)
 
-            pred_spectral = solve_adaptive_ode(net, x0, n_steps=n_steps)
+            pred_spectral = solve_adaptive_ode(net, x0, n_steps=n_steps, **net_conds)
             #pred_spectral = torch.view_as_complex(pred_spectral.permute(0, 2, 3, 1).contiguous())
             #pred = torch.istft(pred_spectral, n_fft=512, win_length=512, hop_length=128, window=self.window.to(x0.device), center=True, normalized=True)
             pred = self.get_istft(pred_spectral)
             pred = pred.unsqueeze(1)
         else:
-            pred = solve_adaptive_ode(net, x0, n_steps=n_steps)
+            pred = solve_adaptive_ode(net, x0, n_steps=n_steps, **net_conds)
 
         return pred
     
@@ -181,13 +183,17 @@ class Diffusion:
         return x
 
 
-    def __call__(self, net, x0, x1):
+    def __call__(self, net, x0, x1, **net_conds):
         """
             loss function
         """
         # if self.spectral:
         #     x0 = self.get_stft(x0)
         #     x1 = self.get_stft(x1)
+        if x0.dim() < 3:
+            x0 = x0.unsqueeze(1)
+        if x1.dim() < 3:
+            x1 = x1.unsqueeze(1)
 
         t = torch.rand(x0.size(0)).to(x0.device)
         while t.dim() < x0.dim():
@@ -199,13 +205,13 @@ class Diffusion:
         #x_t /= x_t.abs().max(-1).values
 
         true_vf = x1 - x0
-        true_vf /= true_vf.abs().max(-1, keepdim=True).values
+        #true_vf /= true_vf.abs().max(-1, keepdim=True).values
         #true_vf *= ((torch.rand(1, device=x0.device) / 2) + 0.5)
 
         if self.spectral:
             true_vf = self.get_stft(true_vf)
 
-        pred_vf = net(x_t, t.view(-1))
+        pred_vf = net(x_t, t.view(-1), **net_conds)
         #true_vf = beta_schedule / sigma2 * (x1 - x_t)
         
         #return torch.nn.functional.l1_loss(pred_vf, true_vf, reduction="none").sum() / x0.size(0)
@@ -217,6 +223,7 @@ if __name__ == "__main__":
     from omegaconf import OmegaConf
     from diffwave import DiffWave
     from models.networks import STFTUnet
+    from models.nuwave import NuWave2
 
     device = "cuda:0"
 
@@ -233,7 +240,9 @@ if __name__ == "__main__":
     spectral = False
 
     #model = DiffWave(params).to(device)
-    model = STFTUnet(257, 2, spectral=spectral).to(device)
+    #model = STFTUnet(257, 2, spectral=spectral).to(device)
+    nuwave_conf = OmegaConf.load("./hparam_nuwave.yaml")
+    model = NuWave2(nuwave_conf).to(device)
     print(sum(p.numel() for p in model.parameters()))
 
     #y = model(torch.randn(2, 32768).to(device), torch.rand(2).to(device))
@@ -244,8 +253,11 @@ if __name__ == "__main__":
 
 
     diffusion = Diffusion("triangle", spectral=spectral)
-    loss = diffusion(model, x0=y, x1=x)
+    fft_size = nuwave_conf.audio.filter_length // 2 + 1
+    band = torch.zeros(fft_size, dtype=torch.int64).to(device)
+    band[:int(0.5 * fft_size)] = 1
+    loss = diffusion(model, x0=y, x1=x, **dict(band=band.expand(2, -1)))
     print(loss)
 
-    s = diffusion.generate(model, torch.randn(2, 1, 32768).to(device))
+    s = diffusion.generate(model, torch.randn(2, 1, 32768).to(device), n_steps=100, **dict(band=band.expand(2, -1)))
     print(s.shape)
