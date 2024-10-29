@@ -10,8 +10,8 @@ hparams_args:
   data:
     timestamp_path: './vctk-silences.0.92.txt'
     #base_dir: '/mnt/hdd/VCTK-Corpus-0.92-bwe-nuwave/wav48_silence_trimmed/'
-    dir: "/home/klara/work/projects/diff_ehnancers/data/wav48_silence_trimmed" #'/mnt/hdd/VCTK-Corpus-0.92-bwe-nuwave/wav48_silence_trimmed_wav/'
-    format: '*mic1.flac'
+    dir: "/home/klara/work/projects/diff_ehnancers/data/wav48_silence_trimmed_wav" #'/mnt/hdd/VCTK-Corpus-0.92-bwe-nuwave/wav48_silence_trimmed_wav/'
+    format: '*mic1.wav'
     cv_ratio: (100./108., 8./108., 0.00) #train/val/test
 
 
@@ -25,6 +25,12 @@ val_dataset:
   _target_: datasets.VCTKMultiSpkDataset
   hparams: ${..hparams_args}
   cv: 1
+
+test_dataset:
+  _target_: datasets.VCTKMultiSpkDataset
+  hparams: ${..hparams_args}
+  cv: 2
+  sr: 8000
 
 
 sampling_rate: ${.hparams_args.audio.sampling_rate}
