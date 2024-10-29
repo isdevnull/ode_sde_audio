@@ -1,9 +1,10 @@
 import os
-import random
 
+# import random
 import hydra
 import matplotlib.pyplot as plt
-import numpy as np
+
+# import numpy as np
 import torch
 from accelerate import Accelerator
 from accelerate.utils import ProjectConfiguration
@@ -275,6 +276,7 @@ def main(cfg):
 
 
 # def setup_seed(seed, cudnn_benchmark_off):
+
 #     torch.manual_seed(seed)
 #     torch.cuda.manual_seed_all(seed)
 #     if cudnn_benchmark_off:
