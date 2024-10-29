@@ -1,0 +1,17 @@
+model:
+  _target_: models.nuwave.NuWave2
+  hparams:
+    audio:
+      filter_length: 1024
+      hop_length: 256
+      win_length: 1024
+      sampling_rate: 16000
+      sr_min: 8000
+      sr_max: 16000
+      length: 32768 #32*1024 ~ 1sec
+
+    arch:
+      residual_layers: 15 #
+      residual_channels: 64
+      pos_emb_dim: 512
+      bsft_channels: 64
