@@ -20,7 +20,7 @@ from utils import compute_grad_norm, compute_weight_norm
 class AudioDiffusionTrainer:
     def __init__(self, cfg, accelerator: Accelerator):
         self.cfg = cfg
-        self.diffusion = Diffusion(beta_type="triangle", spectral=self.cfg.spectral)
+        self.diffusion = Diffusion(beta_type="triangle", spectral=self.cfg.spectral, adaptive_band=self.cfg.adaptive_band)
         self.accelerator = accelerator
 
     @property

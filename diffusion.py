@@ -39,12 +39,21 @@ def solve_adaptive_ode(
     begin=0.0,
     end=1.0,
     ode_method="euler",
+    adaptive_band: bool = False,
+    return_trajectory: bool = False,
     **net_conds
 ) -> torch.Tensor:
     
     @torch.no_grad()
     def drift(t, x):
         sigma = torch.ones(x0.shape[0], device=x.device) * t
+        if adaptive_band:
+            band = net_conds["band"]
+            b_shape = band.shape
+            cutoff_indices = ((0.5 + t.view(-1) / 2) * b_shape[-1]).long()
+            mask = torch.arange(b_shape[-1], device=t.device).unsqueeze(0).expand(b_shape[0], -1) < cutoff_indices.unsqueeze(1)
+            band[mask] = 1
+            net_conds["band"] = band
         out = model(x, sigma, **net_conds)
         return out
 
@@ -55,17 +64,21 @@ def solve_adaptive_ode(
         method=ode_method,
         # options={'step_size': abs(end - begin) / n_steps}
     )
+    if return_trajectory:
+        return out[-1], out
+    
     return out[-1]  # type: ignore
 
 
 class Diffusion:
-    def __init__(self, beta_type: str, beta_min: float = 1e-9, beta_max: float = 1.3e-4, spectral: bool = False):
+    def __init__(self, beta_type: str, beta_min: float = 1e-9, beta_max: float = 1.3e-4, spectral: bool = False, adaptive_band: bool = False):
         self.beta_type = beta_type
         self.beta_min, self.beta_max = beta_min, beta_max
         self.spectral = spectral
         if self.spectral:
             self.window = torch.hann_window(512)
         self.beta_func = get_beta_function(beta_type, a=beta_min, b=beta_max, epsilon=beta_max)
+        self.adaptive_band = adaptive_band
 
     def get_variance(self, t: torch.Tensor):
         sigma1 = torch.empty_like(t, device=t.device) # [0, t]
@@ -100,7 +113,7 @@ class Diffusion:
         #x_t *= ((torch.rand(1).to(x0.device) / 2) + 0.5)
         return x_t, None
     
-    def generate(self, net, x0, n_steps: int = 100, **net_conds):
+    def generate(self, net, x0, n_steps: int = 100, return_trajectory: bool= False, **net_conds):
         if self.spectral:
             x0 = torch.stft(x0.squeeze(1), n_fft=512, win_length=512, hop_length=128, window=self.window.to(x0.device), center=True, normalized=True, return_complex=True)
             x0 = torch.view_as_real(x0).permute(0, 3, 1, 2)
@@ -111,7 +124,7 @@ class Diffusion:
             pred = self.get_istft(pred_spectral)
             pred = pred.unsqueeze(1)
         else:
-            pred = solve_adaptive_ode(net, x0, n_steps=n_steps, **net_conds)
+            pred = solve_adaptive_ode(net, x0, n_steps=n_steps, adaptive_band=self.adaptive_band, return_trajectory=return_trajectory, **net_conds)
 
         return pred
     
@@ -211,6 +224,14 @@ class Diffusion:
         if self.spectral:
             true_vf = self.get_stft(true_vf)
 
+        if self.adaptive_band:
+            band = net_conds["band"]
+            b_shape = band.shape
+            cutoff_indices = ((0.5 + t.view(-1) / 2) * b_shape[-1]).long()
+            mask = torch.arange(b_shape[-1], device=t.device).unsqueeze(0).expand(b_shape[0], -1) < cutoff_indices.unsqueeze(1)
+            band[mask] = 1
+            net_conds["band"] = band
+
         pred_vf = net(x_t, t.view(-1), **net_conds)
         #true_vf = beta_schedule / sigma2 * (x1 - x_t)
         
@@ -241,7 +262,7 @@ if __name__ == "__main__":
 
     #model = DiffWave(params).to(device)
     #model = STFTUnet(257, 2, spectral=spectral).to(device)
-    nuwave_conf = OmegaConf.load("./hparam_nuwave.yaml")
+    nuwave_conf = OmegaConf.load("./configs/model/nuwave.yaml").model.hparams
     model = NuWave2(nuwave_conf).to(device)
     print(sum(p.numel() for p in model.parameters()))
 
