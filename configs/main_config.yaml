@@ -10,7 +10,7 @@ seed: 41113
 checkpoint_dir: checkpoints
 
 n_epochs: 1000
-n_iters_per_epoch: 1000
+n_iters_per_epoch: 200
 train_batch_size: 8 
 val_batch_size: 8
 accumulate_every: 4
@@ -21,7 +21,10 @@ compute_metric_every_epoch: 1 # not working now
 visualize_every_epoch: 1
 lr: 3e-4
 
+# addons
 spectral: false
+adaptive_band: false
+
 
 device: cuda
 
