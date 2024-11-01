@@ -24,6 +24,7 @@ lr: 3e-4
 # addons
 spectral: false
 adaptive_band: false
+loss_type: "l2"
 
 
 device: cuda
