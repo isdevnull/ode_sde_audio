@@ -8,6 +8,8 @@ from functools import partial
 
 from torchdiffeq import odeint
 
+from utils import compute_stats_by_last_dim
+
 
 def triangle_func(t: torch.tensor, a: float = 1e-9, b: float = 1.3e-4, *args, **kwargs) -> torch.tensor:
     """
@@ -54,7 +56,7 @@ def solve_adaptive_ode(
             mask = torch.arange(b_shape[-1], device=t.device).unsqueeze(0).expand(b_shape[0], -1) < cutoff_indices.unsqueeze(1)
             band[mask] = 1
             net_conds["band"] = band
-        out = model(x, sigma, **net_conds)
+        out = model(x, x0, sigma, **net_conds)
         return out
 
     out = odeint(
@@ -62,7 +64,7 @@ def solve_adaptive_ode(
         y0=x0,
         t=torch.linspace(begin, end, n_steps + 1, device=x0.device),
         method=ode_method,
-        # options={'step_size': abs(end - begin) / n_steps}
+        options={'step_size': abs(end - begin) / n_steps}
     )
     if return_trajectory:
         return out[-1], out
@@ -232,11 +234,14 @@ class Diffusion:
             band[mask] = 1
             net_conds["band"] = band
 
-        pred_vf = net(x_t, t.view(-1), **net_conds)
+        pred_vf = net(x_t, x0, t.view(-1), **net_conds)
         #true_vf = beta_schedule / sigma2 * (x1 - x_t)
+        stats = {}
+        stats["pred_vf"] = compute_stats_by_last_dim(pred_vf)
+        stats["true_vf"] = compute_stats_by_last_dim(true_vf)
         
         #return torch.nn.functional.l1_loss(pred_vf, true_vf, reduction="none").sum() / x0.size(0)
-        return (pred_vf - true_vf).square().sum() / x0.size(0)
+        return (pred_vf - true_vf).square().sum() / x0.size(0), stats
 
 
 
@@ -277,8 +282,8 @@ if __name__ == "__main__":
     fft_size = nuwave_conf.audio.filter_length // 2 + 1
     band = torch.zeros(fft_size, dtype=torch.int64).to(device)
     band[:int(0.5 * fft_size)] = 1
-    loss = diffusion(model, x0=y, x1=x, **dict(band=band.expand(2, -1)))
-    print(loss)
+    loss, stats = diffusion(model, x0=y, x1=x, **dict(band=band.expand(2, -1)))
+    print(loss, stats)
 
     s = diffusion.generate(model, torch.randn(2, 1, 32768).to(device), n_steps=100, **dict(band=band.expand(2, -1)))
     print(s.shape)

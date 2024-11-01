@@ -11,9 +11,9 @@ checkpoint_dir: checkpoints
 
 n_epochs: 1000
 n_iters_per_epoch: 200
-train_batch_size: 8 
-val_batch_size: 8
-accumulate_every: 4
+train_batch_size: 4 
+val_batch_size: 4
+accumulate_every: 8
 save_model_every_epoch: 10
 save_full_state_every: 10
 log_every_iter: 1

@@ -187,7 +187,7 @@ class NuWave2(nn.Module):
     def __init__(self, hparams, **kwargs):
         super().__init__()
         self.hparams = hparams
-        self.input_projection = Conv1d(1, hparams.arch.residual_channels, 1)
+        self.input_projection = Conv1d(2, hparams.arch.residual_channels, 1)
         self.diffusion_embedding = DiffusionEmbedding(
             hparams)
         audio_kwargs = dict(filter_length = hparams.audio.filter_length, hop_length = hparams.audio.hop_length,
@@ -204,9 +204,9 @@ class NuWave2(nn.Module):
                                       hparams.arch.residual_channels, 1)
         self.output_projection = Conv1d(hparams.arch.residual_channels, 1, 1)
 
-    def forward(self, audio_low, noise_level, band):
-        #x = torch.stack((audio, audio_low), dim=1)
-        x = self.input_projection(audio_low)
+    def forward(self, x_t, audio_low, noise_level, band):
+        x = torch.cat((x_t, audio_low), dim=1)
+        x = self.input_projection(x)
         x = silu(x)
         noise_level = self.diffusion_embedding(noise_level)
         band = F.one_hot(band).transpose(-1, 1).float()
