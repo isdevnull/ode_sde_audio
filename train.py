@@ -14,14 +14,20 @@ import wandb
 from dataset_utils import draw_spec
 from datasets import InfiniteSampler
 from diffusion import Diffusion
-from utils import compute_grad_norm, compute_weight_norm
+from utils import compute_grad_norm, compute_stats_by_last_dim, compute_weight_norm
 
 
 class AudioDiffusionTrainer:
     def __init__(self, cfg, accelerator: Accelerator):
         self.cfg = cfg
-        self.diffusion = Diffusion(beta_type="triangle", spectral=self.cfg.spectral, adaptive_band=self.cfg.adaptive_band)
+        self.diffusion = Diffusion(
+            beta_type="triangle",
+            spectral=self.cfg.spectral,
+            adaptive_band=self.cfg.adaptive_band,
+            loss_type=self.cfg.loss_type
+        )
         self.accelerator = accelerator
+        self.accelerator.print(f"Using {self.diffusion.loss_func}.")
 
     @property
     def device(self):
@@ -77,7 +83,7 @@ class AudioDiffusionTrainer:
                 x, y, b = next(self.train_loader)
                 x, y, b = x.to(self.device), y.to(self.device), b.to(self.device)
 
-                loss = self.diffusion(self.model, x0=x, x1=y, **dict(band=b))
+                loss, stats = self.diffusion(self.model, x0=x, x1=y, **dict(band=b))
                 self.accelerator.backward(loss)
                 loss_acc += loss.detach().cpu().item() / (
                     self.cfg.log_every_iter * self.cfg.accumulate_every
@@ -92,11 +98,16 @@ class AudioDiffusionTrainer:
                 if self.cfg.log_every_iter > self.cfg.n_iters_per_epoch:
                     self.cfg.log_every_iter = self.cfg.n_iters_per_epoch
                 if i % (self.cfg.log_every_iter * self.cfg.accumulate_every) == 0:
+                    log = {}
+                    for name, vf_stats in stats.items():
+                        for k, v in vf_stats.items():
+                            log[f"{name}/{k}"] = v
                     self.accelerator.log(
                         {
                             "train/mse_loss_per_acc": loss_acc,
                             "utils/grad_norm": grad_norm,
                             "utils/weight_norm": weight_norm,
+                            **log,
                         }
                     )
                     aggregated_loss.append(loss_acc)
@@ -110,7 +121,7 @@ class AudioDiffusionTrainer:
         for i, (x, y, b) in tqdm(enumerate(self.val_loader)):
             x, y, b = x.to(self.device), y.to(self.device), b.to(self.device)
             with torch.no_grad():
-                loss = self.diffusion(self.model, x0=x, x1=y, **dict(band=b))
+                loss, stats = self.diffusion(self.model, x0=x, x1=y, **dict(band=b))
                 aggregated_loss.append(loss.item())
 
             # hardcoded for now, lack of time
@@ -146,12 +157,27 @@ class AudioDiffusionTrainer:
                 self.model.eval()
                 for _, (x, y, b) in enumerate(self.val_loader):
                     with torch.no_grad():
-                        y_pred = self.diffusion.generate(
+                        y_pred, traj = self.diffusion.generate(
                             self.model,
                             x.unsqueeze(1).to(self.device),
                             n_steps=100,
+                            return_trajectory=True,
                             **dict(band=b.to(self.device)),
                         )
+
+                    lp_stats = compute_stats_by_last_dim(x)
+                    y_pred_stats = compute_stats_by_last_dim(y_pred)
+                    gt_stats = compute_stats_by_last_dim(y)
+
+                    log = {}
+                    for k, v in lp_stats.items():
+                        log[f"test/deg_{k}"] = v
+                    for k, v in y_pred_stats.items():
+                        log[f"test/pred_{k}"] = v
+                    for k, v in gt_stats.items():
+                        log[f"test/gt_{k}"] = v
+
+                    self.accelerator.log(log)
 
                     log_data = {}
                     for idx in range(y_pred.shape[0]):
@@ -201,8 +227,27 @@ class AudioDiffusionTrainer:
                                 ),
                             }
                         )
+                        plt.close(spec_fig)
 
+                    traj_stats = {}
+                    traj_stats["min"] = traj.min(dim=-1).values.mean(dim=1).squeeze()
+                    traj_stats["max"] = traj.max(dim=-1).values.mean(dim=1).squeeze()
+                    traj_stats["mean"] = traj.mean(dim=-1).mean(dim=1).squeeze()
+                    traj_stats["std"] = traj.std(dim=-1).mean(dim=1).squeeze()
+
+                    fig, ax = plt.subplots(1, 4, figsize=(16, 4), dpi=500)
+
+                    for i, (k, v) in enumerate(traj_stats.items()):
+                        ax[i].grid(True)
+                        ax[i].set_title(f"Trajectory {k} by step")
+                        ax[i].plot(v.cpu().numpy())
+
+                    log_data.update(
+                        {"test/trajectory_stats": wandb.Image(fig, caption=f"{epoch=}")}
+                    )
+                    plt.close(fig)
                     wandb_tracker = self.accelerator.get_tracker("wandb", unwrap=True)
+
                     if self.accelerator.is_main_process:
                         wandb_tracker.log(log_data)
 
